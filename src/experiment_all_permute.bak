@@ -1,0 +1,174 @@
+/**
+ * @title map_human_sorting_all_permutation
+ * @description xland map: all permutation
+ * @version 0.1.1
+ *
+ * @assets assets/
+ */
+
+// You can import stylesheets (.scss or .css).
+import "../styles/main.scss";
+
+import FullscreenPlugin from "@jspsych/plugin-fullscreen";
+import HtmlKeyboardResponsePlugin from "@jspsych/plugin-html-keyboard-response";
+import SurveyHtmlFormPlugin from "@jspsych/plugin-survey-html-form";
+import PreloadPlugin from "@jspsych/plugin-preload";
+import { initJsPsych } from "jspsych";
+
+/**
+ * This function will be executed by jsPsych Builder and is expected to run the jsPsych experiment
+ *
+ * @type {import("jspsych-builder").RunFunction}
+ */
+export async function run({ assetPaths, input = {}, environment, title, version }) {
+  const jsPsych = initJsPsych();
+
+  const timeline:any = [];
+  // Preload assets
+  timeline.push({
+    type: PreloadPlugin,
+    images: assetPaths.images,
+    audio: assetPaths.audio,
+    video: assetPaths.video,
+  });
+  
+  // filter images with assets/stimulus from assets 
+  const stimulus_images = assetPaths.images.filter(function (el) {
+    return el.includes("assets/stimulus");
+  });
+  // filter images with assets/instruction from assets
+  const instruction_images = assetPaths.images.filter(function (el) {
+    return el.includes("assets/instruction");
+  }).sort();
+  // naturally sort assetPaths.images
+  const sorted_stimulus = stimulus_images.sort(function(a, b) {
+    return a.localeCompare(b, undefined, {numeric: true, sensitivity: 'base'});
+  });
+  // full permutation of two pair index
+  const fullPermutation: any[][] = [];
+  for (let i = 0; i < sorted_stimulus.length; i++) {
+    for (let j = 0; j < sorted_stimulus.length; j++) {
+      if (i === j) {
+        continue;
+      }
+      fullPermutation.push([i, j]);
+    }
+  }
+  const shuffled_np_full_permutation = jsPsych.randomization.shuffle(fullPermutation);
+  // Create a 2D all zero array
+  let resultMatrix: (number | null)[][] = [];
+  for (let i = 0; i < fullPermutation.length; i++) {
+    resultMatrix[i] = new Array(fullPermutation.length).fill(0);
+  }
+
+
+  // Switch to fullscreen
+  timeline.push({
+    type: FullscreenPlugin,
+    message: "<p>欢迎来做实验!<br>准备好后,点击下方按钮将进入全屏开始实验!<p/>",
+    fullscreen_mode: true,
+    button_label: "开始实验"
+  });
+  let survey = {
+    type: SurveyHtmlFormPlugin,
+    preamble: '<p>请输入您的信息</b></p>',
+    html: `<p>名字: <input name='name' type='text' /></p>
+    <p>年龄: <input name='age' type='text' /></p>
+    <p>性别: 
+      <label>
+        <input type="radio" name="gender" value="male" checked>男
+      </label>
+      <label>
+        <input type="radio" name="gender" value="female">女
+      </label>
+    </p>
+            `
+  };
+  timeline.push(survey);
+  /* define instructions trial */
+  let instructions = {
+      type: HtmlKeyboardResponsePlugin,
+      stimulus: `
+        <div>
+          <p>在本实验中, 屏幕上将会同时显示两张不同的地图, 请你想象自己在地图中完成导航任务的情形，并判断导航任务难度的高低。</p>
+          <p>在这里,难度具体是指：在地图中随机初始化你的起点与终点, 均能由起点到达终点的难度. 你需要从展示给你的两张地图中选择出在其中进行导航任务更容易的一张图片，两张图片从左
+          至右分别对应键盘上的字母键F和J。</p>
+          <p>如图所示, 如果您认为左图更<strong>容易</strong>则按<strong>F</strong>键, 如果您认为右图更<strong>容易</strong>则按<strong>J</strong>键</p>
+        </div>
+        <div style='display: flex; justify-content: center;'>
+          <div>
+          <img witdh='512' height='512' style='margin: 0 10px;' src='${instruction_images[0]}'></img>
+          <br>
+          <p class='small'><strong>按F键选这张</strong></p>
+          </div>
+          <div>
+          <img witdh='512' height='512' style='margin: 0 10px;' src='${instruction_images[1]}'></img>
+          <br>
+          <p class='small'><strong>按J键选这张</strong></p></div>
+        </div>
+
+        <p>清楚上述规则后, 请您按任意键开始正式实验.</p>
+      `,
+      post_trial_gap: 500
+    };
+  timeline.push(instructions);
+  await jsPsych.run(timeline);
+  for (const indexPair of shuffled_np_full_permutation) {
+    // get a image pair
+    const image1 = sorted_stimulus[indexPair[0]];
+    const image2 = sorted_stimulus[indexPair[1]];
+    let test = {
+      type: HtmlKeyboardResponsePlugin,
+      stimulus: `
+        <div><h2>选出你认为更容易的地图</h2></div>
+        <div style='display: flex; justify-content: center;'>
+        <div>
+        <img witdh='512' height='512' style='margin: 0 10px;' src='${image1}'></img>
+        <br>
+        <p class='small'><strong>按F键选这张</strong></p>
+        </div>
+        <div>
+        <img witdh='512' height='512' style='margin: 0 10px;' src='${image2}'></img>
+        <br>
+        <p class='small'><strong>按J键选这张</strong></p></div>
+        </div>
+      `,
+      choices: ['f', 'j'],
+      data:{
+        task: 'response',
+        stimulus_name: {
+          "left": image1,
+          "right": image2
+        }
+      },
+    }
+    let new_timeline:any = [];
+    new_timeline.push(test);
+    await jsPsych.run(new_timeline);
+    let trial = jsPsych.data.get().filter({task: 'response'}).select('response').values.slice(-1)[0];
+    if (trial == 'f') { // left
+      resultMatrix[indexPair[0]][indexPair[1]] = -1;
+      } else if (trial == 'j') { // right
+      resultMatrix[indexPair[0]][indexPair[1]] = 1;
+      }
+  }
+
+  const sorted_names = sorted_stimulus.map((item: string) => {return item.split('/').slice(-1)[0];});
+  let finish = {
+    type: HtmlKeyboardResponsePlugin,
+    stimulus: `
+    <div>
+      <h1>实验结束!</h1>
+      <p>感谢您的参与!<br>请按任意键提交您的结果!</p>
+    </div>
+  `,
+  data:{
+    namelist: sorted_names,
+    resultMatrix: resultMatrix
+  }
+  }
+  let new_timeline:any = [];
+  new_timeline.push(finish);
+  await jsPsych.run(new_timeline);
+  return jsPsych;
+}
